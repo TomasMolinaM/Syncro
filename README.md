@@ -9,6 +9,8 @@ Chat colaborativo en tiempo real con WebSockets, Node.js y MongoDB.
 4. Abre http://localhost:3000
 
 Estructura del Proyecto
+
+```text
 chat-colaborativo-realtime/
 ├── .env                  (Variables de entorno)
 ├── .gitignore            (Ignorar node_modules y .env)
@@ -24,3 +26,5 @@ chat-colaborativo-realtime/
 └── server/               (BACKEND TypeScript)
     ├── index.ts          (Servidor Principal)
     └── mongo_connection.ts (Conexión DB)
+
+```
