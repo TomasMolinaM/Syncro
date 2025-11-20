@@ -10,15 +10,17 @@ Chat colaborativo en tiempo real con WebSockets, Node.js y MongoDB.
 
 Estructura del Proyecto
 chat-colaborativo-realtime/
-├── .env                  (Tus claves secretas)
-├── .gitignore            (Ignora node_modules y .env)
-├── package.json          (El archivo que puse arriba)
-├── tsconfig.json         (Configuración de TypeScript)
+├── .env                  (Variables de entorno)
+├── .gitignore            (Ignorar node_modules y .env)
+├── package.json          (Dependencias Node + TS Backend)
+├── tsconfig.json         (Configuración TypeScript Backend)
 ├── README.md             (Documentación)
-├── public/               (CARPETA FRONTEND)
-│   ├── index.html        (Tu cliente web, sigue siendo HTML)
-│   └── README.md
-└── server/               (CARPETA BACKEND)
-    ├── index.ts          (Servidor principal, ahora es .ts)
-    ├── mongo_connection.ts (Conexión DB, ahora es .ts)
-    └── README.md
+├── public/               (FRONTEND)
+│   ├── index.html        (Punto de entrada HTML)
+│   └── js/               (Lógica Modular)
+│       ├── main.js       (Orquestador Principal)
+│       ├── socket.js     (Clase para WebSocket)
+│       └── ui.js         (Manejo del DOM/Interfaz)
+└── server/               (BACKEND TypeScript)
+    ├── index.ts          (Servidor Principal)
+    └── mongo_connection.ts (Conexión DB)
