@@ -11,85 +11,179 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
 
-// Servir archivos estáticos del frontend
 app.use(express.static(path.join(__dirname, '../public')));
 
-let userCount = 0;
+let memoryMessages: ChatMessage[] = [];
+const connectedUsers = new Map<WebSocket, string>(); // ← Mapa de usuarios
 
-// Interfaz para nuestro WebSocket personalizado con userId
-interface CustomWebSocket extends WebSocket {
-    userId?: string;
-}
-
-// Interfaz para la estructura del mensaje
+/* -------------------- TIPOS -------------------- */
 interface ChatMessage {
-    type: string;
-    user: string;
-    text: string;
-    timestamp: Date;
+  type: string;
+  user: string;
+  text: string;
+  timestamp: string;
 }
 
-wss.on('connection', async (ws: CustomWebSocket) => {
-    userCount++;
-    const userId = `Usuario_${userCount}`;
-    ws.userId = userId;
+/* -------------------- WEBSOCKET -------------------- */
+wss.on('connection', async (ws: WebSocket) => {
+  console.log('🔌 Nueva conexión WebSocket');
 
-    console.log(`🔌 ${userId} conectado`);
+  const db = getDB();
+  const collection = db ? db.collection<ChatMessage>('messages') : null;
 
-    const db = getDB();
-    const collection = db ? db.collection('messages') : null;
+  /* 1. ENVIAR HISTORIAL AL CONECTARSE */
+  try {
+    let history: ChatMessage[] = [];
 
-    // 1. Enviar historial
     if (collection) {
-        try {
-            const history = await collection.find().sort({ timestamp: 1 }).limit(50).toArray();
-            ws.send(JSON.stringify({ type: 'history', messages: history }));
-        } catch (e) {
-            console.error("Error historial:", e);
-        }
+      const docs = await collection
+        .find()
+        .sort({ timestamp: 1 })
+        .limit(50)
+        .toArray();
+      
+      history = docs.map(doc => ({
+        type: 'message',
+        user: doc.user,
+        text: doc.text,
+        timestamp: doc.timestamp,
+      }));
+    } else {
+      history = memoryMessages;
     }
 
-    // 2. Notificar unión
-    broadcast({ type: 'status', user: userId, text: 'se ha unido', timestamp: new Date() });
+    if (ws.readyState === WebSocket.OPEN) {
+      // Enviar historial de mensajes
+      history.forEach(msg => {
+        ws.send(JSON.stringify(msg));
+      });
+    }
+  } catch (e) {
+    console.error('❌ Error enviando historial:', e);
+  }
 
-    // 3. Escuchar mensajes
-    ws.on('message', async (data: string) => {
-        try {
-            const parsed = JSON.parse(data);
-            if (parsed.type === 'chat') {
-                const msgObj: ChatMessage = {
-                    type: 'chat',
-                    user: userId,
-                    text: parsed.text,
-                    timestamp: new Date()
-                };
+  /* 2. RECIBIR MENSAJES */
+  ws.on('message', async (rawData) => {
+    try {
+      const parsed = JSON.parse(rawData.toString());
 
-                if (collection) await collection.insertOne(msgObj);
-                broadcast(msgObj);
-            }
-        } catch (e) {
-            console.error("Error mensaje:", e);
+      // LOGIN: Registrar usuario
+      if (parsed.type === 'login') {
+        const username = parsed.user;
+        connectedUsers.set(ws, username);
+        console.log(`👤 ${username} se ha identificado`);
+        
+        // Enviar lista actualizada de usuarios a todos
+        broadcastUserList();
+        
+        // Notificar que se unió
+        broadcast({
+          type: 'message',
+          user: 'Sistema',
+          text: `${username} se ha unido al chat`,
+          timestamp: new Date().toISOString(),
+        });
+        
+        return;
+      }
+
+      // MENSAJE: Guardar y reenviar
+      if (parsed.type === 'message') {
+        const msgObj: ChatMessage = {
+          type: 'message',
+          user: parsed.user,
+          text: parsed.text,
+          timestamp: parsed.timestamp || new Date().toISOString(),
+        };
+
+        // Guardar en MongoDB o memoria
+        if (collection) {
+          await collection.insertOne({
+            ...msgObj,
+            timestamp: msgObj.timestamp,
+          } as any);
+        } else {
+          memoryMessages.push(msgObj);
+          if (memoryMessages.length > 50) {
+            memoryMessages.shift();
+          }
         }
-    });
 
-    // 4. Desconexión
-    ws.on('close', () => {
-        broadcast({ type: 'status', user: userId, text: 'se ha desconectado', timestamp: new Date() });
-    });
+        // Broadcast a todos
+        broadcast(msgObj);
+      }
+
+    } catch (e) {
+      console.error('❌ Error procesando mensaje:', e);
+    }
+  });
+
+  /* 3. DESCONEXIÓN */
+  ws.on('close', () => {
+    const username = connectedUsers.get(ws);
+    
+    if (username) {
+      console.log(`🔴 ${username} desconectado`);
+      connectedUsers.delete(ws);
+      
+      // Actualizar lista de usuarios
+      broadcastUserList();
+      
+      // Notificar que se fue
+      broadcast({
+        type: 'message',
+        user: 'Sistema',
+        text: `${username} se ha desconectado`,
+        timestamp: new Date().toISOString(),
+      });
+    }
+  });
+
+  /* 4. ERRORES */
+  ws.on('error', (err) => {
+    console.error('❌ Error en WebSocket:', err);
+  });
 });
 
-function broadcast(msg: any) {
-    const data = JSON.stringify(msg);
-    wss.clients.forEach((client) => {
-        if (client.readyState === WebSocket.OPEN) {
-            client.send(data);
-        }
-    });
+/* -------------------- FUNCIONES AUXILIARES -------------------- */
+
+// Enviar mensaje a todos los clientes
+function broadcast(msg: ChatMessage) {
+  const data = JSON.stringify(msg);
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(data);
+    }
+  });
 }
 
+// Enviar lista de usuarios conectados
+function broadcastUserList() {
+  const userList = Array.from(connectedUsers.values());
+  const data = JSON.stringify({
+    type: 'users',
+    list: userList,
+  });
+
+  wss.clients.forEach((client) => {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(data);
+    }
+  });
+}
+
+/* -------------------- SERVER -------------------- */
 const PORT = process.env.PORT || 3000;
-connectDB().then(() => {
+
+connectDB()
+  .then(() => {
+    console.log('✅ MongoDB conectado - Mensajes persistentes');
+  })
+  .catch(() => {
+    console.warn('⚠️ MongoDB NO disponible - Modo memoria');
+  })
+  .finally(() => {
     server.listen(PORT, () => {
-        console.log(`🚀 Servidor TypeScript corriendo en http://localhost:${PORT}`);
+      console.log(`🚀 Servidor corriendo en http://localhost:${PORT}`);
     });
-});
+  });
