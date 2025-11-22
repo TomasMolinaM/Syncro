@@ -6,12 +6,15 @@ import mongoose from '../db';
 
 const router = Router();
 
+router.post('/login', usersCtrl.login);
+router.post('/logout', usersCtrl.logout);
 // Users
 router.get('/users', usersCtrl.listUsers);
 router.get('/users/:id', usersCtrl.getUser);
 router.post('/users', usersCtrl.createUser);
 router.put('/users/:id', usersCtrl.updateUser);
 router.delete('/users/:id', usersCtrl.deleteUser);
+
 
 // Rooms
 router.get('/rooms', roomsCtrl.listRooms);
@@ -32,3 +35,4 @@ router.get('/health', (req, res) => {
 });
 
 export default router;
+
