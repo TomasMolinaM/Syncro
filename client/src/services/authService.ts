@@ -22,6 +22,11 @@ export interface UserResponse {
   estado: string;
 }
 
+interface BackendLoginResponse {
+    message: string;
+    user: UserResponse;
+}
+
 export const authService = {
   // Registrar nuevo usuario
   async register(data: RegisterData): Promise<UserResponse> {
@@ -41,30 +46,37 @@ export const authService = {
     return response.json();
   },
 
-  // Login (verificar credenciales)
+  // Login (verificar credenciales y conectar)
   async login(data: LoginData): Promise<UserResponse> {
-    const response = await fetch(`${API_URL}/users`, {
-      method: 'GET',
+    const response = await fetch(`${API_URL}/login`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
     });
 
     if (!response.ok) {
-      throw new Error('Error al verificar credenciales');
+      const errorData = await response.json();
+      throw new Error(errorData.error || 'Error al verificar credenciales');
     }
 
-    const users: UserResponse[] = await response.json();
-    const user = users.find(
-      (u) => u.nombre_usuario === data.nombre_usuario
-    );
-
-    if (!user) {
-      throw new Error('Usuario no encontrado');
-    }
-
-    // TODO: Aquí deberías verificar la contraseña (cuando agregues bcrypt)
-    // Por ahora solo verificamos que el usuario exista
-
-    return user;
+    const result: BackendLoginResponse = await response.json();
+    return result.user;
   },
+
+  // --- NUEVO MÉTODO LOGOUT ---
+  // Avisa al backend para cambiar estado a 'desconectado'
+  async logout(nombre_usuario: string): Promise<void> {
+    await fetch(`${API_URL}/logout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ nombre_usuario }),
+    });
+  },
+  // ---------------------------
 
   // Obtener todos los usuarios
   async getUsers(): Promise<UserResponse[]> {

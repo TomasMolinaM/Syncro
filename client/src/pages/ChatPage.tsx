@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import ChatBox from "../components/ChatBox";
+// Asegúrate de que las rutas de importación coincidan con tu estructura
+import ChatBox from "../components/ChatBox"; 
 import MessageInput from "../components/MessageInput";
 import useWebSocket from "../hooks/useWebSocket";
 import { useAuth } from "../context/AuthContext";
@@ -22,10 +23,15 @@ export default function ChatPage() {
     sendMessage(user.nombre_usuario, text);
   };
 
-  const handleLogout = () => {
-    logout();
+  // --- MODIFICACIÓN AQUÍ ---
+  const handleLogout = async () => {
+    // 1. Esperamos a que el AuthContext avise al servidor (cambio a 'desconectado')
+    await logout();
+    
+    // 2. Una vez que el servidor respondió (o falló), recargamos o redirigimos
     window.location.reload();
   };
+  // -------------------------
 
   if (!user) return null;
 

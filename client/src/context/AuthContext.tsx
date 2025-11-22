@@ -43,9 +43,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = async (data: any) => {
     try {
-      const userData = await authService.register(data);
-      setUser(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
+      // MODIFICACIÓN: Solo llamamos a la API para crear el usuario.
+      // NO guardamos la sesión (setUser) aquí para evitar que te mande al chat automáticamente.
+      await authService.register(data);
     } catch (error) {
       throw error;
     }
@@ -61,7 +61,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    // Intentar notificar al servidor antes de borrar datos locales
+    if (user && user.nombre_usuario) {
+        try {
+            // Asumiendo que authService tiene el método logout implementado
+            if (typeof authService.logout === 'function') {
+                await authService.logout(user.nombre_usuario);
+            }
+        } catch (error) {
+            console.error('Error notificando logout:', error);
+        }
+    }
     setUser(null);
     localStorage.removeItem('user');
   };
