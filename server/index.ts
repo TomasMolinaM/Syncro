@@ -61,7 +61,7 @@ wss.on('connection', async (ws: WebSocket) => {
         text: doc.contenido,
         timestamp: (doc.fecha_envio || doc.createdAt || new Date()).toISOString(),
       }));
-      
+
       console.log(`📜 Enviando ${history.length} mensajes del historial`);
     } else {
       console.log('📝 Usando historial en memoria');
@@ -85,8 +85,10 @@ wss.on('connection', async (ws: WebSocket) => {
       // LOGIN: Registrar usuario
       if (parsed.type === 'login') {
         const username = parsed.user;
+        console.log(`👤 Usuario intentando login: ${username}`);
         connectedUsers.set(ws, username);
         console.log(`👤 ${username} se ha identificado`);
+        console.log(`📊 Total usuarios en connectedUsers: ${connectedUsers.size}`);
 
         let set = userSockets.get(username);
         if (!set) {
@@ -94,6 +96,8 @@ wss.on('connection', async (ws: WebSocket) => {
           userSockets.set(username, set);
         }
         set.add(ws);
+        console.log(`📊 Total usuarios únicos en userSockets: ${userSockets.size}`);
+        console.log(`📊 Usuarios únicos:`, Array.from(userSockets.keys()));
 
         // Actualizar estado en DB
         if (set.size === 1 && isDbConnected) {
@@ -108,8 +112,10 @@ wss.on('connection', async (ws: WebSocket) => {
           }
         }
 
-        // Enviar lista actualizada de usuarios a todos
-        wsBroadcastUserList(Array.from(connectedUsers.values()));
+        // Enviar lista actualizada de usuarios a todos (únicos)
+        const uniqueUsers = Array.from(userSockets.keys());
+        console.log(`📤 Enviando lista de usuarios a todos:`, uniqueUsers);
+        wsBroadcastUserList(uniqueUsers);
 
         // Notificar que se unió
         wsBroadcast({
@@ -170,7 +176,7 @@ wss.on('connection', async (ws: WebSocket) => {
   /* 3. DESCONEXIÓN */
   ws.on('close', () => {
     const username = connectedUsers.get(ws);
-    
+
     if (username) {
       console.log(`🔴 ${username} desconectado`);
       connectedUsers.delete(ws);
@@ -180,10 +186,10 @@ wss.on('connection', async (ws: WebSocket) => {
         set.delete(ws);
         if (set.size === 0) {
           userSockets.delete(username);
-          
+
           if (isDbConnected) {
             UserModel.findOneAndUpdate(
-              { nombre_usuario: username }, 
+              { nombre_usuario: username },
               { $set: { estado: 'desconectado' } }
             ).catch((e) => {
               console.warn('No se pudo actualizar estado a desconectado:', e);
@@ -192,7 +198,7 @@ wss.on('connection', async (ws: WebSocket) => {
         }
       }
 
-      wsBroadcastUserList(Array.from(connectedUsers.values()));
+      wsBroadcastUserList(Array.from(userSockets.keys()));
 
       wsBroadcast({
         type: 'message',

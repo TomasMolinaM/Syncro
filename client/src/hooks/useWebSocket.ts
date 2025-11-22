@@ -18,6 +18,7 @@ export default function useWebSocket() {
       const data = JSON.parse(event.data);
 
       if (data.type === "users") {
+        console.log("👥 Lista de usuarios recibida:", data.list);
         setUsers(data.list);
         return;
       }
@@ -43,13 +44,31 @@ export default function useWebSocket() {
   }, []);
 
   const login = (username: string) => {
+    console.log(`🔑 Intentando login para: ${username}`);
+    console.log(`📡 Estado del socket:`, socketRef.current?.readyState, "(1=OPEN)");
+
     if (socketRef.current?.readyState === WebSocket.OPEN) {
+      console.log(`✅ Enviando login para: ${username}`);
       socketRef.current.send(
         JSON.stringify({
           type: "login",
           user: username,
         })
       );
+    } else {
+      console.warn(`⚠️ Socket no está abierto. Estado: ${socketRef.current?.readyState}`);
+      // Intentar de nuevo después de un breve delay
+      setTimeout(() => {
+        if (socketRef.current?.readyState === WebSocket.OPEN) {
+          console.log(`🔄 Reintentando login para: ${username}`);
+          socketRef.current.send(
+            JSON.stringify({
+              type: "login",
+              user: username,
+            })
+          );
+        }
+      }, 500);
     }
   };
 
