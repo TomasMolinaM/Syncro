@@ -7,13 +7,30 @@ interface LoginModalProps {
 
 export default function LoginModal({ isOpen, onLogin }: LoginModalProps) {
   const [username, setUsername] = useState("");
+  const [loading, setLoading] = useState(false);
 
   if (!isOpen) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (username.trim()) {
-      onLogin(username.trim());
+      createUserAndLogin(username.trim());
+    }
+  };
+
+  const createUserAndLogin = async (name: string) => {
+    try {
+      setLoading(true);
+      await fetch('/api/users', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nombre_usuario: name }),
+      });
+    } catch (e) {
+      console.warn('No se pudo crear usuario por API', e);
+    } finally {
+      setLoading(false);
+      onLogin(name);
     }
   };
 
@@ -36,7 +53,7 @@ export default function LoginModal({ isOpen, onLogin }: LoginModalProps) {
     const randomNum = Math.floor(Math.random() * 999) + 1;
     
     const guestName = `${randomAnimal}${randomAdj}${randomNum}`;
-    onLogin(guestName);
+    createUserAndLogin(guestName);
   };
 
   return (
@@ -102,6 +119,7 @@ export default function LoginModal({ isOpen, onLogin }: LoginModalProps) {
         <button 
           onClick={handleGuestLogin}
           className="btn btn-outline-secondary btn-lg w-100"
+          disabled={loading}
         >
           <i className="bi bi-incognito me-2"></i>
           Entrar como invitado

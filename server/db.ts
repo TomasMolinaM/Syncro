@@ -1,39 +1,39 @@
-import { MongoClient, Db } from 'mongodb';
+import mongoose from 'mongoose';
 import dotenv from 'dotenv';
 import path from 'path';
 
 // Cargar variables de entorno
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
-const uri: string = process.env.MONGO_URI || 'mongodb://localhost:27017';
-const dbName: string = process.env.MONGO_DB_NAME || 'chat_db';
+const uri: string = process.env.MONGODB_URI || process.env.MONGO_URI || 'mongodb://localhost:27017/chat_db';
 
-let client: MongoClient | null = null;
-let db: Db | null = null;
-
-export async function connectDB(): Promise<Db | void> {
+export async function connectDB(): Promise<typeof mongoose | void> {
     try {
-        client = new MongoClient(uri);
-        await client.connect();
-        db = client.db(dbName);
-        console.log("✅ Conectado a MongoDB (TypeScript)");
-        return db;
-    } catch (e) {
-        console.error("❌ Error MongoDB:", e);
-        console.warn("⚠️  Continuando en modo MEMORIA (sin persistencia)");
-        // NO matamos el proceso, simplemente retornamos
-        client = null;
-        db = null;
-    }
-}
+        // Opciones recomendadas
+        const opts = {
+            dbName: process.env.MONGO_DB_NAME || undefined,
+            autoIndex: true,
+            maxPoolSize: 10,
+            serverSelectionTimeoutMS: 5000,
+            socketTimeoutMS: 45000,
+        } as mongoose.ConnectOptions;
 
-export function getDB(): Db | null {
-    return db;
+        await mongoose.connect(uri, opts);
+        console.log('✅ Conectado a MongoDB (mongoose)');
+        return mongoose;
+    } catch (e) {
+        console.error('❌ Error conectando a MongoDB (mongoose):', e);
+        console.warn('⚠️  Continuando en modo MEMORIA (sin persistencia)');
+    }
 }
 
 export async function closeDB(): Promise<void> {
-    if (client) {
-        await client.close();
-        console.log('MongoDB desconectado');
+    try {
+        await mongoose.disconnect();
+        console.log('MongoDB (mongoose) desconectado');
+    } catch (e) {
+        console.warn('Error desconectando mongoose:', e);
     }
 }
+
+export default mongoose;

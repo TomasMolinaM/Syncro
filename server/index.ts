@@ -1,20 +1,36 @@
 import express from 'express';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
+import { setWSS, broadcast as wsBroadcast, broadcastUserList as wsBroadcastUserList } from './ws';
 import path from 'path';
-import { connectDB, getDB } from './db';
+import { connectDB } from './db';
+import cors from 'cors';
+import MessageModel from './models/Message';
+import UserModel from './models/User';
+import apiRoutes from './routes/api';
 import dotenv from 'dotenv';
 
 dotenv.config({ path: path.resolve(__dirname, '../.env') });
 
 const app = express();
+
+// Permitir requests desde el cliente Vite (desarrollo)
+app.use(cors({ origin: process.env.CLIENT_ORIGIN || 'http://localhost:5173' }));
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server });
+setWSS(wss);
 
+app.use(express.json());
 app.use(express.static(path.join(__dirname, '../public')));
+
+// API routes
+app.use('/api', apiRoutes);
 
 let memoryMessages: ChatMessage[] = [];
 const connectedUsers = new Map<WebSocket, string>(); // ← Mapa de usuarios
+
+// Map to track sockets per username so we can support multiple tabs/sockets per user
+const userSockets = new Map<string, Set<WebSocket>>();
 
 /* -------------------- TIPOS -------------------- */
 interface ChatMessage {
@@ -28,25 +44,24 @@ interface ChatMessage {
 wss.on('connection', async (ws: WebSocket) => {
   console.log('🔌 Nueva conexión WebSocket');
 
-  const db = getDB();
-  const collection = db ? db.collection<ChatMessage>('messages') : null;
+  // Usaremos el modelo Message cuando haya conexión a MongoDB (mongoose)
+  const isDbConnected = !!MessageModel && (MessageModel.db != null);
 
   /* 1. ENVIAR HISTORIAL AL CONECTARSE */
-  try {
+    try {
     let history: ChatMessage[] = [];
 
-    if (collection) {
-      const docs = await collection
-        .find()
-        .sort({ timestamp: 1 })
+    if (isDbConnected) {
+      const docs = await MessageModel.find()
+        .sort({ fecha_envio: 1 })
         .limit(50)
-        .toArray();
-      
-      history = docs.map(doc => ({
+        .lean();
+
+      history = docs.map((doc: any) => ({
         type: 'message',
-        user: doc.user,
-        text: doc.text,
-        timestamp: doc.timestamp,
+        user: doc.remitente_nombre || (doc.remitente_id ? String(doc.remitente_id) : 'Sistema'),
+        text: doc.contenido,
+        timestamp: (doc.fecha_envio || doc.createdAt || new Date()).toISOString(),
       }));
     } else {
       history = memoryMessages;
@@ -72,18 +87,42 @@ wss.on('connection', async (ws: WebSocket) => {
         const username = parsed.user;
         connectedUsers.set(ws, username);
         console.log(`👤 ${username} se ha identificado`);
-        
+
+        // Track this websocket under the username
+        let set = userSockets.get(username);
+        if (!set) {
+          set = new Set<WebSocket>();
+          userSockets.set(username, set);
+        }
+        set.add(ws);
+
+        // If this is the first socket for this user, mark connected in DB
+        if (set.size === 1) {
+          try {
+            // Only attempt DB update if mongoose is connected
+            if ((MessageModel as any).db) {
+              await UserModel.findOneAndUpdate(
+                { nombre_usuario: username },
+                { $set: { estado: 'conectado', nombre_usuario: username } },
+                { new: true, upsert: true }
+              );
+            }
+          } catch (e) {
+            console.warn('No se pudo actualizar estado de usuario a conectado:', e);
+          }
+        }
+
         // Enviar lista actualizada de usuarios a todos
-        broadcastUserList();
-        
+        wsBroadcastUserList(Array.from(connectedUsers.values()));
+
         // Notificar que se unió
-        broadcast({
+        wsBroadcast({
           type: 'message',
           user: 'Sistema',
           text: `${username} se ha unido al chat`,
           timestamp: new Date().toISOString(),
         });
-        
+
         return;
       }
 
@@ -96,21 +135,27 @@ wss.on('connection', async (ws: WebSocket) => {
           timestamp: parsed.timestamp || new Date().toISOString(),
         };
 
-        // Guardar en MongoDB o memoria
-        if (collection) {
-          await collection.insertOne({
-            ...msgObj,
-            timestamp: msgObj.timestamp,
-          } as any);
-        } else {
-          memoryMessages.push(msgObj);
-          if (memoryMessages.length > 50) {
-            memoryMessages.shift();
+          // Guardar en MongoDB (usando MessageModel) o memoria
+          if (isDbConnected) {
+            try {
+              await MessageModel.create({
+                remitente_nombre: msgObj.user,
+                contenido: msgObj.text,
+                fecha_envio: msgObj.timestamp ? new Date(msgObj.timestamp) : new Date(),
+                tipo_mensaje: 'texto',
+              });
+            } catch (e) {
+              console.error('❌ Error guardando mensaje en MongoDB:', e);
+            }
+          } else {
+            memoryMessages.push(msgObj);
+            if (memoryMessages.length > 50) {
+              memoryMessages.shift();
+            }
           }
-        }
 
         // Broadcast a todos
-        broadcast(msgObj);
+        wsBroadcast(msgObj);
       }
 
     } catch (e) {
@@ -125,12 +170,31 @@ wss.on('connection', async (ws: WebSocket) => {
     if (username) {
       console.log(`🔴 ${username} desconectado`);
       connectedUsers.delete(ws);
-      
+
+      // Remove this socket from the user's set
+      const set = userSockets.get(username);
+      if (set) {
+        set.delete(ws);
+        if (set.size === 0) {
+          userSockets.delete(username);
+          // This was the last socket for the user: mark as disconnected in DB
+          try {
+            if ((MessageModel as any).db) {
+              UserModel.findOneAndUpdate({ nombre_usuario: username }, { $set: { estado: 'desconectado' } }).catch((e) => {
+                console.warn('No se pudo actualizar estado a desconectado:', e);
+              });
+            }
+          } catch (e) {
+            console.warn('Error marcando usuario desconectado:', e);
+          }
+        }
+      }
+
       // Actualizar lista de usuarios
-      broadcastUserList();
-      
+      wsBroadcastUserList(Array.from(connectedUsers.values()));
+
       // Notificar que se fue
-      broadcast({
+      wsBroadcast({
         type: 'message',
         user: 'Sistema',
         text: `${username} se ha desconectado`,

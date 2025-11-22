@@ -15,9 +15,25 @@ function App() {
     setIsLoggedIn(true);
   };
 
-  const handleSend = (text: string) => {
+  // Send via API (server will persist and broadcast via WS)
+  const handleSend = async (text: string) => {
     if (!username.trim()) return;
-    sendMessage(username, text);
+    try {
+      await fetch('/api/messages', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          remitente_nombre: username,
+          contenido: text,
+          fecha_envio: new Date().toISOString(),
+          tipo_mensaje: 'texto',
+        }),
+      });
+    } catch (e) {
+      console.warn('No se pudo enviar mensaje por API, intentando via WS...', e);
+      // fallback to WS sendMessage if API fails
+      sendMessage(username, text);
+    }
   };
 
   return (
