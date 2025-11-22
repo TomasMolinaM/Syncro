@@ -4,6 +4,7 @@ import { WebSocketServer, WebSocket } from 'ws';
 import { setWSS, broadcast as wsBroadcast, broadcastUserList as wsBroadcastUserList } from './ws';
 import path from 'path';
 import { connectDB } from './db';
+import mongoose from 'mongoose';
 import cors from 'cors';
 import MessageModel from './models/Message';
 import UserModel from './models/User';
@@ -27,9 +28,7 @@ app.use(express.static(path.join(__dirname, '../public')));
 app.use('/api', apiRoutes);
 
 let memoryMessages: ChatMessage[] = [];
-const connectedUsers = new Map<WebSocket, string>(); // ← Mapa de usuarios
-
-// Map to track sockets per username so we can support multiple tabs/sockets per user
+const connectedUsers = new Map<WebSocket, string>();
 const userSockets = new Map<string, Set<WebSocket>>();
 
 /* -------------------- TIPOS -------------------- */
@@ -44,11 +43,10 @@ interface ChatMessage {
 wss.on('connection', async (ws: WebSocket) => {
   console.log('🔌 Nueva conexión WebSocket');
 
-  // Usaremos el modelo Message cuando haya conexión a MongoDB (mongoose)
-  const isDbConnected = !!MessageModel && (MessageModel.db != null);
+  const isDbConnected = mongoose.connection.readyState === 1;
 
   /* 1. ENVIAR HISTORIAL AL CONECTARSE */
-    try {
+  try {
     let history: ChatMessage[] = [];
 
     if (isDbConnected) {
@@ -63,12 +61,14 @@ wss.on('connection', async (ws: WebSocket) => {
         text: doc.contenido,
         timestamp: (doc.fecha_envio || doc.createdAt || new Date()).toISOString(),
       }));
+      
+      console.log(`📜 Enviando ${history.length} mensajes del historial`);
     } else {
+      console.log('📝 Usando historial en memoria');
       history = memoryMessages;
     }
 
     if (ws.readyState === WebSocket.OPEN) {
-      // Enviar historial de mensajes
       history.forEach(msg => {
         ws.send(JSON.stringify(msg));
       });
@@ -88,7 +88,6 @@ wss.on('connection', async (ws: WebSocket) => {
         connectedUsers.set(ws, username);
         console.log(`👤 ${username} se ha identificado`);
 
-        // Track this websocket under the username
         let set = userSockets.get(username);
         if (!set) {
           set = new Set<WebSocket>();
@@ -96,19 +95,16 @@ wss.on('connection', async (ws: WebSocket) => {
         }
         set.add(ws);
 
-        // If this is the first socket for this user, mark connected in DB
-        if (set.size === 1) {
+        // Actualizar estado en DB
+        if (set.size === 1 && isDbConnected) {
           try {
-            // Only attempt DB update if mongoose is connected
-            if ((MessageModel as any).db) {
-              await UserModel.findOneAndUpdate(
-                { nombre_usuario: username },
-                { $set: { estado: 'conectado', nombre_usuario: username } },
-                { new: true, upsert: true }
-              );
-            }
+            await UserModel.findOneAndUpdate(
+              { nombre_usuario: username },
+              { $set: { estado: 'conectado' } },
+              { new: true, upsert: false }
+            );
           } catch (e) {
-            console.warn('No se pudo actualizar estado de usuario a conectado:', e);
+            console.warn('No se pudo actualizar estado de usuario:', e);
           }
         }
 
@@ -135,27 +131,35 @@ wss.on('connection', async (ws: WebSocket) => {
           timestamp: parsed.timestamp || new Date().toISOString(),
         };
 
-          // Guardar en MongoDB (usando MessageModel) o memoria
-          if (isDbConnected) {
-            try {
-              await MessageModel.create({
-                remitente_nombre: msgObj.user,
-                contenido: msgObj.text,
-                fecha_envio: msgObj.timestamp ? new Date(msgObj.timestamp) : new Date(),
-                tipo_mensaje: 'texto',
-              });
-            } catch (e) {
-              console.error('❌ Error guardando mensaje en MongoDB:', e);
-            }
-          } else {
+        // Guardar en MongoDB o memoria
+        if (isDbConnected) {
+          try {
+            await MessageModel.create({
+              remitente_nombre: msgObj.user,
+              contenido: msgObj.text,
+              fecha_envio: msgObj.timestamp ? new Date(msgObj.timestamp) : new Date(),
+              tipo_mensaje: 'texto',
+            });
+            console.log(`💾 Mensaje de ${msgObj.user} guardado en MongoDB`);
+          } catch (e) {
+            console.error('❌ Error guardando mensaje en MongoDB:', e);
             memoryMessages.push(msgObj);
-            if (memoryMessages.length > 50) {
-              memoryMessages.shift();
-            }
           }
+        } else {
+          memoryMessages.push(msgObj);
+          if (memoryMessages.length > 50) {
+            memoryMessages.shift();
+          }
+          console.log(`💾 Mensaje guardado en memoria`);
+        }
 
-        // Broadcast a todos
-        wsBroadcast(msgObj);
+        // Broadcast a todos EXCEPTO al remitente
+        const data = JSON.stringify(msgObj);
+        wss.clients.forEach((client) => {
+          if (client.readyState === WebSocket.OPEN && client !== ws) {
+            client.send(data);
+          }
+        });
       }
 
     } catch (e) {
@@ -171,29 +175,25 @@ wss.on('connection', async (ws: WebSocket) => {
       console.log(`🔴 ${username} desconectado`);
       connectedUsers.delete(ws);
 
-      // Remove this socket from the user's set
       const set = userSockets.get(username);
       if (set) {
         set.delete(ws);
         if (set.size === 0) {
           userSockets.delete(username);
-          // This was the last socket for the user: mark as disconnected in DB
-          try {
-            if ((MessageModel as any).db) {
-              UserModel.findOneAndUpdate({ nombre_usuario: username }, { $set: { estado: 'desconectado' } }).catch((e) => {
-                console.warn('No se pudo actualizar estado a desconectado:', e);
-              });
-            }
-          } catch (e) {
-            console.warn('Error marcando usuario desconectado:', e);
+          
+          if (isDbConnected) {
+            UserModel.findOneAndUpdate(
+              { nombre_usuario: username }, 
+              { $set: { estado: 'desconectado' } }
+            ).catch((e) => {
+              console.warn('No se pudo actualizar estado a desconectado:', e);
+            });
           }
         }
       }
 
-      // Actualizar lista de usuarios
       wsBroadcastUserList(Array.from(connectedUsers.values()));
 
-      // Notificar que se fue
       wsBroadcast({
         type: 'message',
         user: 'Sistema',
