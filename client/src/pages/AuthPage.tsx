@@ -6,7 +6,7 @@ export default function AuthPage() {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(''); // Estado para el mensaje verde
   const [loading, setLoading] = useState(false);
-  const { login, register } = useAuth();
+  const { login, register, loginAsGuest } = useAuth();
 
   // Estados para login
   const [loginData, setLoginData] = useState({
@@ -74,13 +74,13 @@ export default function AuthPage() {
       // --- LÓGICA DE ÉXITO ---
       // 1. Cambiar a la pestaña de Iniciar Sesión
       setIsLogin(true);
-
+      
       // 2. Mostrar mensaje verde de éxito
       setSuccess('¡Registro exitoso! Por favor inicia sesión.');
-
+      
       // 3. Rellenar el campo de usuario automáticamente para comodidad
       setLoginData(prev => ({ ...prev, nombre_usuario: registerData.nombre_usuario }));
-
+      
       // 4. Limpiar el formulario de registro
       setRegisterData({
         nombre_usuario: '',
@@ -97,7 +97,17 @@ export default function AuthPage() {
     }
   };
 
-
+  const handleGuestLogin = async () => {
+    setError('');
+    setLoading(true);
+    try {
+      await loginAsGuest();
+    } catch (err: any) {
+      setError(err.message || 'Error al crear usuario invitado');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   return (
     <div className="min-vh-100 d-flex align-items-center justify-content-center bg-light">
@@ -105,12 +115,12 @@ export default function AuthPage() {
         <div className="row justify-content-center">
           <div className="col-md-6 col-lg-5">
             <div className="card shadow-lg border-0 rounded-4">
-
+              
               {/* Header */}
               <div className="card-header bg-primary text-white text-center py-4 rounded-top-4">
                 <h2 className="mb-0">
                   <i className="bi bi-chat-dots-fill me-2"></i>
-                  Syncro
+                  Chat Colaborativo
                 </h2>
               </div>
 
@@ -177,9 +187,6 @@ export default function AuthPage() {
                     <button type="submit" className="btn btn-primary w-100 py-2 mb-3" disabled={loading}>
                       {loading ? 'Iniciando...' : 'Iniciar Sesión'}
                     </button>
-                    <p className="text-center text-muted small mb-0">
-                      Al usar este servicio, aceptas nuestros términos y condiciones
-                    </p>
                   </form>
                 ) : (
                   /* Formulario de Registro */
@@ -245,7 +252,15 @@ export default function AuthPage() {
                   </form>
                 )}
 
+                <div className="d-flex align-items-center my-3">
+                  <hr className="flex-grow-1" />
+                  <span className="px-3 text-muted small">O</span>
+                  <hr className="flex-grow-1" />
+                </div>
 
+                <button onClick={handleGuestLogin} className="btn btn-outline-secondary w-100 py-2" disabled={loading}>
+                  <i className="bi bi-incognito me-2"></i> Entrar como invitado
+                </button>
               </div>
             </div>
           </div>

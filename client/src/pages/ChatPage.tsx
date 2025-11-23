@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 // Asegúrate de que las rutas de importación coincidan con tu estructura
-import ChatBox from "../components/ChatBox";
+import ChatBox from "../components/ChatBox"; 
 import MessageInput from "../components/MessageInput";
 import useWebSocket from "../hooks/useWebSocket";
 import { useAuth } from "../context/AuthContext";
@@ -27,7 +27,7 @@ export default function ChatPage() {
   const handleLogout = async () => {
     // 1. Esperamos a que el AuthContext avise al servidor (cambio a 'desconectado')
     await logout();
-
+    
     // 2. Una vez que el servidor respondió (o falló), recargamos o redirigimos
     window.location.reload();
   };
@@ -39,16 +39,16 @@ export default function ChatPage() {
     <div className="bg-slate-100 min-vh-100 d-flex align-items-center justify-content-center p-4">
       <div className="w-100" style={{ maxWidth: "900px" }}>
         <div className="card shadow-lg">
-
+          
           {/* Header */}
           <div className="card-header bg-primary text-white">
             <div className="d-flex justify-content-between align-items-center">
-              <h4 className="mb-0">💬 Syncro</h4>
+              <h4 className="mb-0">💬 Chat Colaborativo</h4>
               <div className="d-flex align-items-center gap-3">
                 <span className="badge bg-success">
                   👤 {user.nombre_completo || user.nombre_usuario}
                 </span>
-                <button
+                <button 
                   onClick={handleLogout}
                   className="btn btn-sm btn-outline-light"
                 >
@@ -61,16 +61,16 @@ export default function ChatPage() {
 
           <div className="card-body">
             <div className="row">
-
+              
               {/* Área principal del chat */}
               <div className="col-md-8">
                 {/* Caja de mensajes */}
                 <ChatBox messages={messages} currentUser={user.nombre_usuario} />
 
                 {/* Input de mensaje */}
-                <MessageInput
+                <MessageInput 
                   sendMessage={handleSend}
-                  disabled={false}
+                  disabled={false} 
                 />
               </div>
 
@@ -90,8 +90,8 @@ export default function ChatPage() {
                         </li>
                       ) : (
                         users.map((u) => (
-                          <li
-                            key={u}
+                          <li 
+                            key={u} 
                             className="list-group-item d-flex align-items-center"
                           >
                             <span className="badge bg-success rounded-pill me-2">●</span>
