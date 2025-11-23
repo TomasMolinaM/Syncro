@@ -43,7 +43,7 @@ export default function ChatPage() {
           {/* Header */}
           <div className="card-header bg-primary text-white">
             <div className="d-flex justify-content-between align-items-center">
-              <h4 className="mb-0">💬 Chat Colaborativo</h4>
+              <h4 className="mb-0">💬 Syncro</h4>
               <div className="d-flex align-items-center gap-3">
                 <span className="badge bg-success">
                   👤 {user.nombre_completo || user.nombre_usuario}

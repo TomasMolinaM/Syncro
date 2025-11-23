@@ -120,7 +120,7 @@ export default function AuthPage() {
               <div className="card-header bg-primary text-white text-center py-4 rounded-top-4">
                 <h2 className="mb-0">
                   <i className="bi bi-chat-dots-fill me-2"></i>
-                  Chat Colaborativo
+                  Syncro
                 </h2>
               </div>
 
